@@ -29,6 +29,8 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.Set;
+
+import org.firmata4j.IODevice;
 import org.firmata4j.IOEvent;
 import org.firmata4j.Pin;
 import org.firmata4j.PinEventListener;
@@ -40,7 +42,7 @@ import org.firmata4j.PinEventListener;
  */
 public class FirmataPin implements Pin {
 
-    private final FirmataDevice device;
+    private final AbstractFirmataDevice device;
     private final byte pinId;
     private final Set<Mode> supportedModes = Collections.synchronizedSet(EnumSet.noneOf(Mode.class));
     private final Set<PinEventListener> listeners = Collections.synchronizedSet(new HashSet<PinEventListener>());
@@ -53,13 +55,13 @@ public class FirmataPin implements Pin {
      * @param device the device the pin belongs to
      * @param index the index of pin on the device
      */
-    public FirmataPin(FirmataDevice device, byte index) {
+    public FirmataPin(AbstractFirmataDevice device, byte index) {
         this.device = device;
         this.pinId = index;
     }
 
     @Override
-    public FirmataDevice getDevice() {
+    public AbstractFirmataDevice getDevice() {
         return device;
     }
 
@@ -171,7 +173,7 @@ public class FirmataPin implements Pin {
 
     /**
      * Sets initial mode of a pin. This method bypasses standard
-     * {@link #setMode(com.codefactory.firmata4j.Pin.Mode)} to avoid sending a
+     * {@link #setMode(Mode)} to avoid sending a
      * message to hardware.
      *
      * @param mode initial mode

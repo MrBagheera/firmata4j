@@ -42,7 +42,7 @@ import org.firmata4j.I2CListener;
  */
 public class FirmataI2CDevice implements I2CDevice {
 
-    private final FirmataDevice masterDevice;
+    private final AbstractFirmataDevice masterDevice;
 
     private final byte address;
 
@@ -54,7 +54,7 @@ public class FirmataI2CDevice implements I2CDevice {
 
     private final Set<I2CListener> subscribers = Collections.synchronizedSet(new HashSet<I2CListener>());
 
-    FirmataI2CDevice(FirmataDevice masterDevice, byte address) {
+    FirmataI2CDevice(AbstractFirmataDevice masterDevice, byte address) {
         this.masterDevice = masterDevice;
         this.address = address;
     }
