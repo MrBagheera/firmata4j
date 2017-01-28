@@ -43,12 +43,24 @@ import java.util.concurrent.BlockingQueue;
  */
 public class FirmataDevice extends AbstractFirmataDevice implements IODevice, SerialPortEventListener {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(AbstractFirmataDevice.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(FirmataDevice.class);
 
     private final SerialPort port;
     private final BlockingQueue<byte[]> byteQueue = new ArrayBlockingQueue<>(128);
-    private final FirmataParser parser = new FirmataParser(byteQueue);
-    private final Thread parserExecutor = new Thread(parser, "firmata-parser-thread");
+    private final FirmataParser parser = new FirmataParser();
+    private final Thread parserExecutor = new Thread("firmata-parser-thread") {
+        @Override
+        public void run() {
+            while (!Thread.interrupted()) {
+                try {
+                    parser.process(byteQueue.take());
+                } catch (InterruptedException ex) {
+                    LOGGER.info("FirmataParser has stopped");
+                    return;
+                }
+            }
+        }
+    };
 
     /**
      * Constructs FirmataDevice instance on specified port.
@@ -117,7 +129,8 @@ public class FirmataDevice extends AbstractFirmataDevice implements IODevice, Se
      * @param msg the Firmata message
      * @throws IOException when writing fails
      */
-    void sendMessage(byte[] msg) throws IOException {
+    @Override
+    protected void sendMessage(byte[] msg) throws IOException {
         try {
             port.writeBytes(msg);
         } catch (SerialPortException ex) {

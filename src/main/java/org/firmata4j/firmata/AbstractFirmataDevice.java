@@ -34,7 +34,6 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.text.MessageFormat;
 import java.util.*;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -402,13 +401,11 @@ public abstract class AbstractFirmataDevice implements IODevice {
         }
     }
 
-    protected class FirmataParser extends FiniteStateMachine implements Runnable {
+    protected class FirmataParser extends FiniteStateMachine {
 
-        private final BlockingQueue<byte[]> queue;
-
-        public FirmataParser(BlockingQueue<byte[]> queue) {
+        @SuppressWarnings("WeakerAccess")
+        public FirmataParser() {
             super(WaitingForMessageState.class);
-            this.queue = queue;
         }
 
         @Override
@@ -451,19 +448,6 @@ public abstract class AbstractFirmataDevice implements IODevice {
                     throw new IllegalStateException("Parser has reached the terminal state. It may be due receiving of unsupported command.");
             }
         }
-
-        @Override
-        public void run() {
-            while (!Thread.interrupted()) {
-                try {
-                    process(queue.take());
-                } catch (InterruptedException ex) {
-                    LOGGER.info("FirmataParser has stopped");
-                    return;
-                }
-            }
-        }
-
     }
 
 }
