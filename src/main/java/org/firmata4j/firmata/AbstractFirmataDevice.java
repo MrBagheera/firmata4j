@@ -205,7 +205,7 @@ public abstract class AbstractFirmataDevice implements IODevice {
      * @param msg the Firmata message
      * @throws IOException when writing fails
      */
-    abstract void sendMessage(byte[] msg) throws IOException;
+    protected abstract void sendMessage(byte[] msg) throws IOException;
 
     /**
      * Notifies the device listeners that a pin has changed.<br/>
