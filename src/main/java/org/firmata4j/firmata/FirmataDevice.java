@@ -32,6 +32,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+
 
 /**
  * Implements {@link IODevice} that is using Firmata protocol over JSSC.
@@ -43,6 +46,9 @@ public class FirmataDevice extends AbstractFirmataDevice implements IODevice, Se
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractFirmataDevice.class);
 
     private final SerialPort port;
+    private final BlockingQueue<byte[]> byteQueue = new ArrayBlockingQueue<>(128);
+    private final FirmataParser parser = new FirmataParser(byteQueue);
+    private final Thread parserExecutor = new Thread(parser, "firmata-parser-thread");
 
     /**
      * Constructs FirmataDevice instance on specified port.
@@ -56,6 +62,7 @@ public class FirmataDevice extends AbstractFirmataDevice implements IODevice, Se
     @Override
     protected void openPort() throws IOException {
         try {
+            parserExecutor.start();
             if (!port.isOpened()) {
                 port.openPort();
                 port.setParams(
@@ -67,17 +74,24 @@ public class FirmataDevice extends AbstractFirmataDevice implements IODevice, Se
             port.setEventsMask(SerialPort.MASK_RXCHAR);
             port.addEventListener(this);
         } catch (SerialPortException ex) {
+            parserExecutor.interrupt();
             throw new IOException("Cannot start firmata device", ex);
         }
     }
 
     @Override
     protected void closePort() throws IOException {
+        parserExecutor.interrupt();
         try {
             port.purgePort(SerialPort.PURGE_RXCLEAR | SerialPort.PURGE_TXCLEAR);
             port.closePort();
         } catch (SerialPortException ex) {
             throw new IOException("Cannot properly stop firmata device", ex);
+        }
+        try {
+            parserExecutor.join();
+        } catch (InterruptedException ex) {
+            LOGGER.warn("Cannot stop parser thread", ex);
         }
     }
 
@@ -86,6 +100,7 @@ public class FirmataDevice extends AbstractFirmataDevice implements IODevice, Se
         // queueing data from input buffer to processing by FSM logic
         if (event.isRXCHAR() && event.getEventValue() > 0) {
             try {
+                //noinspection StatementWithEmptyBody
                 while (!byteQueue.offer(port.readBytes())) {
                     // trying to place bytes to queue until it succeeds
                 }

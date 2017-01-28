@@ -23,8 +23,6 @@
  */
 package org.firmata4j.firmata;
 
-import jssc.SerialPort;
-import jssc.SerialPortException;
 import org.firmata4j.*;
 import org.firmata4j.firmata.parser.FirmataToken;
 import org.firmata4j.firmata.parser.WaitingForMessageState;
@@ -36,7 +34,6 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.text.MessageFormat;
 import java.util.*;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -50,9 +47,6 @@ import static org.firmata4j.firmata.parser.FirmataToken.*;
  */
 public abstract class AbstractFirmataDevice implements IODevice {
 
-    protected final BlockingQueue<byte[]> byteQueue = new ArrayBlockingQueue<>(128);
-    private final FirmataParser parser = new FirmataParser(byteQueue);
-    private final Thread parserExecutor = new Thread(parser, "firmata-parser-thread");
     private final Set<IODeviceEventListener> listeners = Collections.synchronizedSet(new LinkedHashSet<IODeviceEventListener>());
     private final List<FirmataPin> pins = Collections.synchronizedList(new ArrayList<FirmataPin>());
     private final AtomicBoolean started = new AtomicBoolean(false);
@@ -68,8 +62,6 @@ public abstract class AbstractFirmataDevice implements IODevice {
     @Override
     public void start() throws IOException {
         if (!started.getAndSet(true)) {
-            parserExecutor.start();
-
             /*
              The startup strategy is to open the port and immediately
              send the REPORT_FIRMWARE message.  When we receive the
@@ -94,12 +86,12 @@ public abstract class AbstractFirmataDevice implements IODevice {
              Either way, when we hear the REPORT_FIRMWARE reply, we
              know the board is alive and ready to communicate.
              */
+            openPort();
             try {
-                openPort();
                 sendMessage(FirmataMessageFactory.REQUEST_FIRMWARE);
             }
             catch (IOException ex) {
-                parserExecutor.interrupt();
+                stop();
                 throw ex;
             }
         }
@@ -109,19 +101,27 @@ public abstract class AbstractFirmataDevice implements IODevice {
 
     @Override
     public void stop() throws IOException {
-        parserExecutor.interrupt();
-        shutdown();
+        ready.set(false);
         try {
-            parserExecutor.join();
-        } catch (InterruptedException ex) {
-            LOGGER.warn("Cannot stop parser thread", ex);
+            sendMessage(FirmataMessageFactory.analogReport(false));
+            sendMessage(FirmataMessageFactory.digitalReport(false));
+        } catch (IOException ex) {
+            throw new IOException("Cannot properly stop firmata device", ex);
         } finally {
-            IOEvent event = new IOEvent(this);
-            for (IODeviceEventListener l : listeners) {
-                l.onStop(event);
+            try {
+                closePort();
+            }
+            finally {
+                IOEvent event = new IOEvent(this);
+                for (IODeviceEventListener l : listeners) {
+                    l.onStop(event);
+                }
             }
         }
     }
+
+    abstract protected void closePort() throws IOException;
+
     @Override
     public void ensureInitializationIsDone() throws InterruptedException {
         if (!started.get()) {
@@ -225,7 +225,6 @@ public abstract class AbstractFirmataDevice implements IODevice {
      * per firmata-device (not per I2C device). So firmata-device uses the
      * longest delay.
      *
-     * @param delay
      * @throws IOException when sending of configuration to firmata-device
      * failed
      */
@@ -239,26 +238,6 @@ public abstract class AbstractFirmataDevice implements IODevice {
             longestDelaySoFar = longestI2CDelay.get();
         }
     }
-
-
-    /**
-     * Tries to release all resources and properly terminate the connection to
-     * the hardware.
-     *
-     * @throws IOException when communication could not be stopped properly
-     */
-    private void shutdown() throws IOException {
-        ready.set(false);
-        try {
-            sendMessage(FirmataMessageFactory.analogReport(false));
-            sendMessage(FirmataMessageFactory.digitalReport(false));
-        } catch (IOException ex) {
-            throw new IOException("Cannot properly stop firmata device", ex);
-        }
-        closePort();
-    }
-
-    abstract protected void closePort() throws IOException;
 
 
     /**
@@ -423,7 +402,7 @@ public abstract class AbstractFirmataDevice implements IODevice {
         }
     }
 
-    private class FirmataParser extends FiniteStateMachine implements Runnable {
+    protected class FirmataParser extends FiniteStateMachine implements Runnable {
 
         private final BlockingQueue<byte[]> queue;
 
@@ -434,7 +413,7 @@ public abstract class AbstractFirmataDevice implements IODevice {
 
         @Override
         public void onEvent(Event event) {
-            LOGGER.debug("Event name: {}, type: {}, timestamp: {}", new Object[]{event.getName(), event.getType(), event.getTimestamp()});
+            LOGGER.debug("Event name: {}, type: {}, timestamp: {}", event.getName(), event.getType(), event.getTimestamp());
             for (Map.Entry<String, Object> entry : event.getBody().entrySet()) {
                 LOGGER.debug("{}: {}", entry.getKey(), entry.getValue());
             }
